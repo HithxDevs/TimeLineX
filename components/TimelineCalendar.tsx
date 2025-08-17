@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession, signIn } from 'next-auth/react';
-import { format, addDays, isSameDay, isToday } from 'date-fns';
+import { format, addDays, isSameDay, isToday, parseISO } from 'date-fns';
 import { getTasks, addTask, updateTask, deleteTask } from '@/app/lib/googleTasks';
 
 export default function VerticalTimeline({ session: initialSession }) {
@@ -11,7 +11,8 @@ export default function VerticalTimeline({ session: initialSession }) {
   const [todos, setTodos] = useState<any[]>([]);
   const [newTodo, setNewTodo] = useState('');
   const [newTodoTime, setNewTodoTime] = useState('09:00');
-  const [editTodo, setEditTodo] = useState<{id: string, title: string, time: string} | null>(null);
+  const [newTodoDate, setNewTodoDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [editTodo, setEditTodo] = useState<{id: string, title: string, time: string, date: string} | null>(null);
   const [daysToShow, setDaysToShow] = useState(7);
   const [loading, setLoading] = useState(false);
 
@@ -39,17 +40,18 @@ export default function VerticalTimeline({ session: initialSession }) {
     
     try {
       const token = session?.accessToken || initialSession?.accessToken;
-      const dueDate = new Date(currentDate);
+      const dueDate = new Date(newTodoDate);
       const [hours, minutes] = newTodoTime.split(':').map(Number);
       dueDate.setHours(hours, minutes, 0, 0);
       
       await addTask(token, {
         title: newTodo,
-        notes: `Added at ${newTodoTime} on ${format(new Date(), 'MMM dd, yyyy')}`,
+        notes: `Added at ${newTodoTime} on ${format(dueDate, 'MMM dd, yyyy')}`,
         due: dueDate.toISOString()
       });
       setNewTodo('');
       setNewTodoTime('09:00');
+      setNewTodoDate(format(new Date(), 'yyyy-MM-dd'));
       await loadTasks();
     } catch (error) {
       console.error('Error adding task:', error);
@@ -61,8 +63,7 @@ export default function VerticalTimeline({ session: initialSession }) {
     
     try {
       const token = session?.accessToken || initialSession?.accessToken;
-      const task = todos.find(t => t.id === editTodo.id);
-      const dueDate = new Date(task.due);
+      const dueDate = new Date(editTodo.date);
       const [hours, minutes] = editTodo.time.split(':').map(Number);
       dueDate.setHours(hours, minutes);
       
@@ -117,13 +118,16 @@ export default function VerticalTimeline({ session: initialSession }) {
         return isSameDay(taskDate, day);
       })
       .sort((a, b) => {
-        return new Date(a.due).getTime() - new Date(b.due).getTime();
+        const timeA = a.due ? new Date(a.due).getTime() : 0;
+        const timeB = b.due ? new Date(b.due).getTime() : 0;
+        return timeA - timeB;
       });
   };
 
   const getTaskTime = (dueString: string) => {
+    if (!dueString) return 'All day';
     const date = new Date(dueString);
-    return format(date, 'HH:mm');
+    return format(date, 'h:mm a');
   };
 
   const navigateDate = (direction: 'prev' | 'next') => {
@@ -134,6 +138,7 @@ export default function VerticalTimeline({ session: initialSession }) {
 
   const goToToday = () => {
     setCurrentDate(new Date());
+    setNewTodoDate(format(new Date(), 'yyyy-MM-dd'));
   };
 
   if (!session && !initialSession) {
@@ -251,6 +256,12 @@ export default function VerticalTimeline({ session: initialSession }) {
                                   onChange={(e) => setEditTodo({...editTodo, time: e.target.value})}
                                   className="px-2 py-1 border rounded"
                                 />
+                                <input
+                                  type="date"
+                                  value={editTodo.date}
+                                  onChange={(e) => setEditTodo({...editTodo, date: e.target.value})}
+                                  className="px-2 py-1 border rounded"
+                                />
                                 <button
                                   onClick={handleUpdateTodo}
                                   className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded"
@@ -290,7 +301,8 @@ export default function VerticalTimeline({ session: initialSession }) {
                                       onClick={() => setEditTodo({
                                         id: task.id, 
                                         title: task.title,
-                                        time: getTaskTime(task.due)
+                                        time: getTaskTime(task.due),
+                                        date: task.due ? format(new Date(task.due), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd')
                                       })}
                                       className="p-1 text-gray-500 hover:text-blue-500"
                                     >
@@ -333,7 +345,7 @@ export default function VerticalTimeline({ session: initialSession }) {
 
       <div className="p-4 border-t sticky bottom-0 bg-white">
         <div className="space-y-2">
-          <div className="flex gap-2">
+          <div className="flex gap-2 mb-2">
             <input
               type="text"
               value={newTodo}
@@ -347,6 +359,12 @@ export default function VerticalTimeline({ session: initialSession }) {
               onChange={(e) => setNewTodoTime(e.target.value)}
               className="px-3 py-2 border rounded"
             />
+            <input
+              type="date"
+              value={newTodoDate}
+              onChange={(e) => setNewTodoDate(e.target.value)}
+              className="px-3 py-2 border rounded"
+            />
             <button
               onClick={handleAddTodo}
               disabled={loading}
@@ -356,7 +374,7 @@ export default function VerticalTimeline({ session: initialSession }) {
             </button>
           </div>
           <div className="text-sm text-gray-700">
-            Task will be added to {format(currentDate, 'MMMM d, yyyy')} at {newTodoTime}
+            Task will be added to {format(new Date(newTodoDate), 'MMMM d, yyyy')} at {newTodoTime}
           </div>
         </div>
       </div>
